@@ -61,6 +61,11 @@ type CreateFigmaNodeInput = {
   nodeId: string;
 };
 
+type CreateUserInput = {
+  name: string;
+  apiKey: string;
+};
+
 const watchNode = async (id: number, token: string) => {
   const node = await prisma.figmaNode.findFirstOrThrow({ where: { id } });
   const res = await fetch(
@@ -104,8 +109,11 @@ const getUser = async (figmaKey: string) => {
   });
 };
 
+// every minute for now, probably won't want this running every minute
+// for every node
 cron.schedule("* * * * *", async () => {
   console.log("watching nodes");
+  // may need to chunk this up for performance
   const nodes = await prisma.figmaNode.findMany({ include: { user: true } });
   console.log(`checking ${nodes.length} nodes`);
   Promise.all(nodes.map((n) => watchNode(n.id, n.user.figmaKey)));
@@ -134,6 +142,15 @@ const resolvers = {
 
       return watchNode(created.id, token);
     },
+    createUser: async (_parent: never, { user }: { user: CreateUserInput }) => {
+      const created = await prisma.user.create({
+        data: {
+          name: user.name,
+          figmaKey: user.apiKey,
+        },
+      });
+      return created;
+    },
     nodeStatus: async (
       _parent: never,
       { id }: { id: number },
@@ -144,6 +161,10 @@ const resolvers = {
   },
 };
 
+// TODO: consider making a separate graph for registration
+// that doesn't require a figma token associated to a user
+// in the header. Otherwise might need to inspect the request
+// to determine if this is a "public" mutation
 const server = new ApolloServer({
   typeDefs: schema,
   resolvers,
